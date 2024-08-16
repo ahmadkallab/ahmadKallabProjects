@@ -1,0 +1,144 @@
+import json
+import boto3
+import logging
+from boto3.dynamodb.conditions import Key, Attr
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')  # Ensure the region is correct
+table_name = 'HealthRecords'  # Ensure the table name is correct
+table = dynamodb.Table(table_name)
+
+def lambda_handler(event, context):
+    logger.info("Event: %s", json.dumps(event))  # Log the incoming event
+    http_method = event.get('httpMethod', '')
+
+    if http_method == 'POST':
+        return add_patient(event)
+    elif http_method == 'GET':
+        return get_patient(event)
+    else:
+        return {
+            'statusCode': 405,
+            'body': json.dumps({'error': 'Method not allowed'}),
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        }
+
+def add_patient(event):
+    try:
+        body = event.get('body')
+        if not body:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Request body is missing'}),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            }
+
+        body = json.loads(body)
+        patient_id = str(body.get('patientId'))
+        name = body.get('name')
+        dob = body.get('dob')
+        gender = body.get('gender')
+        medicalHistory = body.get('medicalHistory')
+        treatmentRecords = body.get('treatmentRecords')
+        paymentMethod = body.get('paymentMethod')
+        paymentDetails = body.get('paymentDetails')
+
+        if not (patient_id and name and dob and gender and medicalHistory and treatmentRecords and paymentMethod and paymentDetails):
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'All fields are required'}),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            }
+
+        item = {
+            'patientId': patient_id,
+            'name': name,
+            'dob': dob,
+            'gender': gender,
+            'medicalHistory': medicalHistory,
+            'treatmentRecords': treatmentRecords,
+            'paymentMethod': paymentMethod,
+            'paymentDetails': paymentDetails
+        }
+        table.put_item(Item=item)
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Patient added successfully'}),
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        }
+    except Exception as e:
+        logger.error("Error adding patient: %s", e)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)}),
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        }
+def get_patient(event):
+    try:
+        # Retrieve query parameters
+        query_params = event.get('queryStringParameters')
+        if not query_params or 'patientId' not in query_params:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'patientId query parameter is required'}),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            }
+
+        # Get the patientId from query parameters
+        patient_id = query_params['patientId']
+        
+        # Fetch the patient information from DynamoDB
+        response = table.get_item(Key={'patientId': patient_id})
+        item = response.get('Item', {})
+        
+        # Check if the item was found
+        if not item:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({'error': 'Patient not found'}),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            }
+        
+        # Return the found patient information
+        return {
+            'statusCode': 200,
+            'body': json.dumps(item),
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        }
+    except Exception as e:
+        logger.error("Error retrieving patient: %s", e)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': 'Internal server error'}),
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        }
